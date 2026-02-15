@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     max_workers: int = 4
     keyframe_interval: int = 30
     scene_threshold: float = 0.3
+    max_keyframes: int = 100
     dedup_threshold: float = 0.95
     yolo_confidence: float = 0.3
     yolo_batch_size: int = 16

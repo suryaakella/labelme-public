@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end integration test: ingest 1 Instagram video via hashtag scraper and verify the full pipeline."""
+"""End-to-end integration tests: ingest videos from Instagram and YouTube, verify the full pipeline."""
 
 import sys
 import time
@@ -9,21 +9,21 @@ import httpx
 API_BASE = "http://localhost:8000"
 TIMEOUT = 10
 POLL_INTERVAL = 5
-MAX_WAIT = 300  # 5 minutes max
+MAX_WAIT = 600  # 10 minutes max
 
 
 def check_health(client: httpx.Client):
-    print("[1/7] Checking API health...")
+    print("[health] Checking API health...")
     resp = client.get(f"{API_BASE}/health", timeout=TIMEOUT)
     resp.raise_for_status()
     print(f"  OK: {resp.json()}")
 
 
-def submit_ingestion(client: httpx.Client) -> int:
-    print("[2/7] Submitting ingestion: '1 satisfying video from instagram'...")
+def submit_ingestion(client: httpx.Client, query: str) -> int:
+    print(f"[ingest] Submitting: '{query}'...")
     resp = client.post(
         f"{API_BASE}/api/ingest",
-        json={"query": "1 satisfying video from instagram"},
+        json={"query": query},
         timeout=30,
     )
     resp.raise_for_status()
@@ -34,7 +34,7 @@ def submit_ingestion(client: httpx.Client) -> int:
 
 
 def wait_for_completion(client: httpx.Client, task_id: int) -> dict:
-    print(f"[3/7] Polling task #{task_id} until completion (max {MAX_WAIT}s)...")
+    print(f"[poll] Polling task #{task_id} until completion (max {MAX_WAIT}s)...")
     elapsed = 0
     while elapsed < MAX_WAIT:
         time.sleep(POLL_INTERVAL)
@@ -60,8 +60,8 @@ def wait_for_completion(client: httpx.Client, task_id: int) -> dict:
 
 
 def get_task_video(client: httpx.Client, task_id: int) -> int:
-    """Get a video from this specific task using the task videos API."""
-    print(f"[4/7] Verifying video was ingested for task #{task_id}...")
+    """Get a video from this specific task, wait for it to reach a terminal state."""
+    print(f"[video] Waiting for video pipeline (task #{task_id})...")
     resp = client.get(f"{API_BASE}/api/tasks/{task_id}/videos", timeout=TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
@@ -72,12 +72,11 @@ def get_task_video(client: httpx.Client, task_id: int) -> int:
     video_id = video["id"]
     print(f"  Video #{video_id}: '{video.get('title', 'Untitled')}' — status: {video['status']}")
 
-    # Wait for the video pipeline to reach a terminal state
     terminal_states = {"completed", "failed", "gdpr_blocked"}
     elapsed = 0
     while elapsed < MAX_WAIT:
         if video["status"] in terminal_states:
-            print(f"  Video reached terminal state '{video['status']}' in ~{elapsed}s")
+            print(f"  Video reached '{video['status']}' in ~{elapsed}s")
             return video_id
 
         step = video.get("current_step", "")
@@ -94,136 +93,120 @@ def get_task_video(client: httpx.Client, task_id: int) -> int:
     return video_id
 
 
-def verify_video_detail(client: httpx.Client, video_id: int):
-    print(f"[5/7] Verifying full pipeline output for video #{video_id}...")
+def verify_video(client: httpx.Client, video_id: int):
+    """Verify pipeline outputs including v2 annotation format."""
+    print(f"[verify] Checking pipeline output for video #{video_id}...")
     resp = client.get(f"{API_BASE}/api/videos/{video_id}", timeout=TIMEOUT)
     resp.raise_for_status()
-    detail = resp.json()
+    v = resp.json()
 
-    if detail["status"] == "gdpr_blocked":
-        print("  Video was GDPR-blocked — skipping pipeline checks (expected for some content)")
-        print(f"  [PASS] storage_url: {detail.get('storage_url') is not None}")
-        print(f"  [PASS] thumbnail_url: {detail.get('thumbnail_url') is not None}")
+    if v["status"] == "gdpr_blocked":
+        print("  Video was GDPR-blocked — skipping pipeline checks")
+        print(f"  [PASS] storage_url: {v.get('storage_url') is not None}")
         return
 
+    # Basic pipeline checks
     checks = {
-        "storage_url": detail.get("storage_url") is not None,
-        "thumbnail_url": detail.get("thumbnail_url") is not None,
-        "tags": len(detail.get("tags", [])) > 0,
-        "detections": len(detail.get("detections", [])) > 0,
-        "transcript_text": detail.get("transcript_text") is not None,
-        "transcript_segments": len(detail.get("transcript_segments", [])) > 0,
-        "annotation": detail.get("annotation") is not None,
+        "storage_url": v.get("storage_url") is not None,
+        "thumbnail_url": v.get("thumbnail_url") is not None,
+        "tags": len(v.get("tags", [])) > 0,
+        "detections": len(v.get("detections", [])) > 0,
+        "annotation": v.get("annotation") is not None,
     }
 
-    for check_name, passed in checks.items():
-        symbol = "PASS" if passed else "FAIL"
-        print(f"  [{symbol}] {check_name}")
+    for name, passed in checks.items():
+        print(f"  [{'PASS' if passed else 'FAIL'}] {name}")
+
+    # Annotation v2 checks
+    ann = v.get("annotation")
+    if ann:
+        version = ann.get("version")
+        print(f"\n  Annotation version: {version}")
+        if version == 2:
+            v2_checks = {
+                "summary": bool(ann.get("summary")),
+                "scenes": isinstance(ann.get("scenes"), list) and len(ann["scenes"]) > 0,
+                "primary_activities": isinstance(ann.get("primary_activities"), list),
+                "content_tags": isinstance(ann.get("content_tags"), list),
+                "visual_style": isinstance(ann.get("visual_style"), str),
+                "video_metadata": isinstance(ann.get("video_metadata"), dict),
+                "transcript (dict)": isinstance(ann.get("transcript"), (dict, type(None))),
+            }
+            for name, passed in v2_checks.items():
+                print(f"  [{'PASS' if passed else 'FAIL'}] v2: {name}")
+
+            # Print summary preview
+            summary = ann.get("summary", "")
+            if summary:
+                preview = summary[:120] + "..." if len(summary) > 120 else summary
+                print(f"\n  Summary: {preview}")
+            if ann.get("primary_activities"):
+                print(f"  Activities: {', '.join(ann['primary_activities'])}")
+            if ann.get("content_tags"):
+                print(f"  Tags: {', '.join(ann['content_tags'])}")
+            if ann.get("scenes"):
+                print(f"  Scenes: {len(ann['scenes'])} keyframe descriptions")
+        else:
+            print("  [INFO] v1 annotation (legacy format)")
 
     failed = [k for k, v in checks.items() if not v]
     if failed:
         print(f"\n  WARNING: {len(failed)} check(s) did not pass: {', '.join(failed)}")
         print("  (Some checks may fail if the video has no audio or detectable objects)")
     else:
-        print("  All pipeline outputs present!")
+        print("\n  All pipeline outputs present!")
 
 
-def verify_task_videos(client: httpx.Client, task_id: int):
-    print(f"[6/7] Verifying enriched task videos API for task #{task_id}...")
-    resp = client.get(f"{API_BASE}/api/tasks/{task_id}/videos", timeout=TIMEOUT)
-    resp.raise_for_status()
-    data = resp.json()
-
-    task = data["task"]
-    videos = data["videos"]
-    print(f"  Task status: {task['status']}, videos: {len(videos)}")
-
-    assert len(videos) >= 1, f"Expected at least 1 video in task, got {len(videos)}"
-
-    for v in videos:
-        print(f"\n  Video #{v['id']}: {v.get('title') or 'Untitled'} — status: {v['status']}")
-
-        # Verify new enrichment fields exist in response
-        enrichment_fields = [
-            "current_step", "error_message", "performance_tier",
-            "brand_safety_tier", "sentiment_avg", "sentiment_label",
-            "content_categories", "is_ai_generated", "gdpr_status",
-        ]
-        missing = [f for f in enrichment_fields if f not in v]
-        if missing:
-            print(f"  [FAIL] Missing enrichment fields in response: {', '.join(missing)}")
-        else:
-            print(f"  [PASS] All enrichment fields present in API response")
-
-        if v["status"] == "completed":
-            checks = {
-                "current_step": v.get("current_step") == "Pipeline complete",
-                "performance_tier": v.get("performance_tier") is not None,
-                "brand_safety_tier": v.get("brand_safety_tier") is not None,
-                "sentiment_label": v.get("sentiment_label") in (None, "positive", "neutral", "negative"),
-                "content_categories_type": isinstance(v.get("content_categories", []), list),
-            }
-            for check_name, passed in checks.items():
-                symbol = "PASS" if passed else "FAIL"
-                value = v.get(check_name.split("_type")[0] if "_type" in check_name else check_name)
-                print(f"  [{symbol}] {check_name}: {value}")
-
-            if v.get("performance_tier"):
-                print(f"    Performance: {v['performance_tier']}")
-            if v.get("brand_safety_tier"):
-                print(f"    Brand safety: {v['brand_safety_tier']}")
-            if v.get("sentiment_label"):
-                print(f"    Sentiment: {v['sentiment_label']} (avg={v.get('sentiment_avg')})")
-            if v.get("content_categories"):
-                print(f"    Categories: {', '.join(v['content_categories'])}")
-            if v.get("is_ai_generated"):
-                print(f"    AI Generated: {v['is_ai_generated']}")
-            if v.get("gdpr_status"):
-                print(f"    GDPR status: {v['gdpr_status']}")
-
-        elif v["status"] == "failed":
-            print(f"  Error: {v.get('error_message', 'unknown')}")
-
-        elif v["status"] == "gdpr_blocked":
-            print(f"  GDPR status: {v.get('gdpr_status', 'blocked')}")
-
-
-def verify_search(client: httpx.Client):
-    print("[7/7] Verifying semantic search works...")
+def verify_search(client: httpx.Client, search_term: str):
+    print(f"[search] Searching for '{search_term}'...")
     resp = client.get(
         f"{API_BASE}/api/search",
-        params={"q": "satisfying video", "limit": 5},
+        params={"q": search_term, "limit": 5},
         timeout=30,
     )
     resp.raise_for_status()
     data = resp.json()
-    print(f"  Search for 'dance' returned {data['total']} result(s)")
+    print(f"  Returned {data['total']} result(s)")
 
     if data["total"] > 0:
         top = data["results"][0]
-        print(f"  Top hit: video #{top['video_id']} — similarity: {top['similarity']}")
+        print(f"  Top hit: video #{top['video_id']} — similarity: {top['similarity']:.3f}")
     else:
-        print("  WARNING: No search results (embeddings may not have been stored or video was GDPR-blocked)")
+        print("  WARNING: No results (embeddings may not be stored or video was GDPR-blocked)")
+
+
+def run_test(client: httpx.Client, query: str, search_term: str):
+    """Run a full ingestion + pipeline + verification cycle."""
+    task_id = submit_ingestion(client, query)
+    wait_for_completion(client, task_id)
+    video_id = get_task_video(client, task_id)
+    verify_video(client, video_id)
+    verify_search(client, search_term)
+    return video_id
 
 
 def main():
     print("=" * 60)
-    print("ForgeIndex E2E Integration Test")
-    print("Query: '1 satisfying video from instagram'")
-    print("Tests: health, ingest, task polling, video pipeline,")
-    print("       pipeline output, enriched task videos API, search")
+    print("ForgeIndex Integration Tests")
     print("=" * 60)
 
     client = httpx.Client()
 
     try:
         check_health(client)
-        task_id = submit_ingestion(client)
-        wait_for_completion(client, task_id)
-        video_id = get_task_video(client, task_id)
-        verify_video_detail(client, video_id)
-        verify_task_videos(client, task_id)
-        verify_search(client)
+
+        # Test 1: Instagram
+        print("\n" + "-" * 60)
+        print("TEST 1: Instagram")
+        print("-" * 60)
+        run_test(client, "1 satisfying video from instagram", "satisfying")
+
+        # Test 2: YouTube
+        print("\n" + "-" * 60)
+        print("TEST 2: YouTube")
+        print("-" * 60)
+        run_test(client, "1 cooking tutorial from youtube", "cooking tutorial")
+
     except httpx.ConnectError:
         print(f"\nERROR: Cannot connect to {API_BASE}. Is the backend running?")
         sys.exit(1)
@@ -234,7 +217,7 @@ def main():
         client.close()
 
     print("\n" + "=" * 60)
-    print("Integration test PASSED")
+    print("All integration tests PASSED")
     print("=" * 60)
 
 

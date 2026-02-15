@@ -116,7 +116,7 @@ export default function IndexPage() {
           <div className="flex gap-4">
             <input
               className="input flex-1"
-              placeholder="e.g., 20 cooking videos from instagram"
+              placeholder="e.g., 20 cooking videos (defaults to Instagram, say 'from youtube' for YT)"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -206,10 +206,19 @@ export default function IndexPage() {
                           <span className="text-xs text-gray-500">{t.current_step}</span>
                         </div>
                       )}
+                      {t.status === 'completed' && t.error_message && (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-orange-400 text-xs">&#9888;</span>
+                          <span className="text-xs text-orange-400/80">{t.error_message}</span>
+                        </div>
+                      )}
+                      {t.status === 'failed' && t.error_message && (
+                        <div className="text-xs text-red-400/80 mt-0.5">{t.error_message}</div>
+                      )}
                     </td>
                     <td className="py-2 pr-4 text-gray-400">{t.platform}</td>
                     <td className="py-2 pr-4">
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={t.status} errorMessage={t.error_message} />
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex items-center gap-2">
@@ -238,16 +247,24 @@ export default function IndexPage() {
   )
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, errorMessage }) {
+  const hasGdprBlock = errorMessage && /blocked.*gdpr|gdpr/i.test(errorMessage)
   const colors = {
     pending: 'bg-gray-700 text-gray-300',
     running: 'bg-yellow-900 text-yellow-300',
-    completed: 'bg-green-900 text-green-300',
+    completed: hasGdprBlock ? 'bg-orange-900 text-orange-300' : 'bg-green-900 text-green-300',
     failed: 'bg-red-900 text-red-300',
   }
+  const label = status === 'completed' && hasGdprBlock ? 'GDPR blocked' : status
+  const tooltip = errorMessage || (status === 'completed' && !hasGdprBlock ? 'Completed successfully' : '')
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[status] || colors.pending}`}>
-      {status}
+    <span className={`px-2 py-0.5 rounded text-xs font-medium cursor-default relative group ${colors[status] || colors.pending}`}>
+      {label}
+      {tooltip && (
+        <span className="invisible group-hover:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg shadow-lg whitespace-nowrap max-w-xs truncate z-50">
+          {tooltip}
+        </span>
+      )}
     </span>
   )
 }

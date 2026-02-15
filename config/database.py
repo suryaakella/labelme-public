@@ -194,7 +194,8 @@ class IngestionTask(Base):
 
     id = Column(Integer, primary_key=True)
     query = Column(Text, nullable=False)
-    platform = Column(String(32), nullable=False, default="youtube")
+    search_topic = Column(Text)
+    platform = Column(String(32), nullable=False, default="instagram")
     max_results = Column(Integer, nullable=False, default=10)
     status = Column(String(32), nullable=False, default="pending")
     progress = Column(Float, nullable=False, default=0.0)

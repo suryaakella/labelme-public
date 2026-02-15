@@ -33,8 +33,8 @@ export default function VideoDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/videos" className="text-blue-400 hover:text-blue-300 text-sm">
-        &larr; Back to videos
+      <Link to="/" className="text-blue-400 hover:text-blue-300 text-sm">
+        &larr; Back to dashboard
       </Link>
 
       {/* GDPR Status Banner */}

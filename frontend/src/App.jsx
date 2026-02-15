@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import IndexPage from './pages/IndexPage'
-import VideosPage from './pages/VideosPage'
 import VideoDetailPage from './pages/VideoDetailPage'
 import TaskDetailPage from './pages/TaskDetailPage'
 
@@ -28,7 +27,6 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         <Routes>
           <Route path="/" element={<IndexPage />} />
-          <Route path="/videos" element={<VideosPage />} />
           <Route path="/videos/:id" element={<VideoDetailPage />} />
           <Route path="/tasks/:id" element={<TaskDetailPage />} />
         </Routes>

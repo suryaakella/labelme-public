@@ -24,6 +24,7 @@ class KeyframeExtractor:
     def __init__(self):
         self.interval = settings.keyframe_interval
         self.scene_threshold = settings.scene_threshold
+        self.max_keyframes = settings.max_keyframes
 
     def extract(self, video_path: str, video_id: int) -> List[ExtractedFrame]:
         tmpdir = tempfile.mkdtemp(prefix="forgeindex_frames_")
@@ -53,6 +54,13 @@ class KeyframeExtractor:
 
         # Get frame timestamps via ffprobe
         frames = self._collect_frames(tmpdir, video_id, video_path)
+
+        # Cap to max_keyframes by subsampling evenly
+        if len(frames) > self.max_keyframes:
+            logger.info(f"Subsampling {len(frames)} keyframes to {self.max_keyframes} for video {video_id}")
+            step = len(frames) / self.max_keyframes
+            frames = [frames[int(i * step)] for i in range(self.max_keyframes)]
+
         return frames
 
     def _collect_frames(self, tmpdir: str, video_id: int, video_path: str) -> List[ExtractedFrame]:

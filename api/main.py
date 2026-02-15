@@ -16,6 +16,7 @@ from api.routes.search import router as search_router
 from api.routes.videos import router as videos_router
 from api.routes.datasets import router as datasets_router
 from api.routes.tasks import router as tasks_router
+from api.routes.run import router as run_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ app.include_router(search_router, prefix="/api")
 app.include_router(videos_router, prefix="/api")
 app.include_router(datasets_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
+app.include_router(run_router, prefix="/api")
 
 
 @app.get("/health")

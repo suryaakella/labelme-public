@@ -45,14 +45,18 @@ def _get_parser_chain():
         prompt = ChatPromptTemplate.from_messages([
             ("system", (
                 "You parse video search queries. Extract:\n"
-                "- platform: youtube, instagram, or tiktok (default: youtube)\n"
+                "- platform: youtube, instagram, or tiktok (default: instagram)\n"
                 "- max_results: number of videos requested (default: 10)\n"
                 "- search_topic: the actual search topic with platform name and count removed\n\n"
                 "Examples:\n"
                 "  '20 cooking videos from instagram' -> platform=instagram, max_results=20, search_topic=cooking\n"
                 "  '5 TikTok videos about skateboarding' -> platform=tiktok, max_results=5, search_topic=skateboarding\n"
-                "  'cat videos' -> platform=youtube, max_results=10, search_topic=cat videos\n"
+                "  'cat videos' -> platform=instagram, max_results=10, search_topic=cat videos\n"
                 "  '100 reels of street food in tokyo' -> platform=instagram, max_results=100, search_topic=street food in tokyo\n"
+                "  'charizard on insta' -> platform=instagram, max_results=10, search_topic=charizard\n"
+                "  '3 fitness clips from yt' -> platform=youtube, max_results=3, search_topic=fitness\n"
+                "  'dancing on ig' -> platform=instagram, max_results=10, search_topic=dancing\n"
+                "  '2 prank videos tt' -> platform=tiktok, max_results=2, search_topic=prank\n"
             )),
             ("human", "{query}"),
         ])
@@ -67,14 +71,14 @@ def _fallback_parse(query: str) -> ParsedQuery:
     import re
     q = query.lower()
 
-    # Detect platform
-    platform = "youtube"
-    if any(w in q for w in ["instagram", "insta", " ig ", "#ig"]):
-        platform = "instagram"
+    # Detect platform (default: instagram)
+    platform = "instagram"
+    if any(w in q for w in ["youtube", "yt "]):
+        platform = "youtube"
     elif any(w in q for w in ["tiktok", "tik tok", " tt ", "#tt"]):
         platform = "tiktok"
-    elif "youtube" in q or "yt " in q:
-        platform = "youtube"
+    elif any(w in q for w in ["instagram", "insta", " ig ", "#ig"]):
+        platform = "instagram"
     if any(w in q for w in ["reel", "reels"]):
         platform = "instagram"
 

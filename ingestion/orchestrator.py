@@ -23,6 +23,7 @@ class IngestionOrchestrator:
                 logger.error(f"Task {task_id} not found")
                 return
             query = task.query
+            search_topic = task.search_topic or task.query
             platform = task.platform
             max_results = task.max_results
 
@@ -32,7 +33,7 @@ class IngestionOrchestrator:
             # Step 1: Discover videos
             await self._update_task(task_id, current_step=f"Discovering {platform} videos for '{query}'...")
             videos = await self.discovery.discover(
-                query=query, platform=platform, max_results=max_results,
+                query=search_topic, platform=platform, max_results=max_results,
             )
 
             # Step 2: Deduplicate URLs

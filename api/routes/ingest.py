@@ -52,6 +52,7 @@ async def create_ingestion(req: IngestRequest):
     async with get_session() as session:
         task = IngestionTask(
             query=req.query,
+            search_topic=parsed.search_topic,
             platform=parsed.platform,
             max_results=parsed.max_results,
             status="pending",

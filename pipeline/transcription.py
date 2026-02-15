@@ -77,6 +77,9 @@ class TranscriptionService:
         except subprocess.CalledProcessError:
             logger.warning(f"Video {video_id}: no audio track or unsupported codec — skipping transcription")
             return
+        except Exception as e:
+            logger.warning(f"Video {video_id}: Whisper transcription failed ({e}) — skipping transcription")
+            return
 
         async with get_session() as session:
             transcript = Transcript(

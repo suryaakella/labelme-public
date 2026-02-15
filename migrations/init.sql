@@ -163,6 +163,7 @@ CREATE INDEX idx_video_tags_tag ON video_tags (tag);
 CREATE TABLE ingestion_tasks (
     id              SERIAL PRIMARY KEY,
     query           TEXT NOT NULL,
+    search_topic    TEXT,
     platform        VARCHAR(32) NOT NULL DEFAULT 'youtube',
     max_results     INT NOT NULL DEFAULT 10,
     status          VARCHAR(32) NOT NULL DEFAULT 'pending',
