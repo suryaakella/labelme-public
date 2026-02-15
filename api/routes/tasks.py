@@ -1,11 +1,17 @@
+import io
+import json
 import logging
+import re
+import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, desc
 
-from config.database import get_session, IngestionTask, Video, VideoTag
+from config.database import get_session, IngestionTask, Video, VideoTag, Annotation
+from config.storage import storage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
@@ -202,3 +208,99 @@ async def get_task_videos(task_id: int):
         ))
 
     return TaskVideosResponse(task=task_resp, videos=video_summaries)
+
+
+def _safe_filename(name: str) -> str:
+    """Sanitize a string for use in a filename."""
+    if not name:
+        return "untitled"
+    return re.sub(r'[^\w\-.]', '_', name)[:80]
+
+
+@router.get("/tasks/{task_id}/export")
+async def export_task(task_id: int):
+    async with get_session() as session:
+        task = await session.get(IngestionTask, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        result = await session.execute(
+            select(Video).where(Video.task_id == task_id).order_by(Video.id)
+        )
+        videos = result.scalars().all()
+
+        if not videos:
+            raise HTTPException(status_code=404, detail="No videos found for this task")
+
+        # Fetch annotations for all videos
+        video_ids = [v.id for v in videos]
+        annotations = {}
+        if video_ids:
+            ann_result = await session.execute(
+                select(Annotation).where(Annotation.video_id.in_(video_ids))
+            )
+            for ann in ann_result.scalars().all():
+                annotations[ann.video_id] = ann.data
+
+    # Build ZIP
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        manifest = {
+            "task": {
+                "id": task.id,
+                "query": task.query,
+                "platform": task.platform,
+                "status": task.status,
+                "max_results": task.max_results,
+                "total_videos": task.total_videos,
+                "processed_videos": task.processed_videos,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+            },
+            "videos": [],
+        }
+
+        for v in videos:
+            entry = {
+                "id": v.id,
+                "url": v.url,
+                "title": v.title,
+                "platform": v.platform,
+                "duration_sec": v.duration_sec,
+                "creator_username": v.creator_username,
+                "status": v.status,
+                "has_annotation": v.id in annotations,
+                "has_video_file": bool(v.storage_key),
+            }
+            manifest["videos"].append(entry)
+
+            # Write annotation JSON
+            if v.id in annotations:
+                zf.writestr(
+                    f"annotations/{v.id}.json",
+                    json.dumps(annotations[v.id], indent=2, default=str),
+                )
+
+            # Download and include video file from MinIO
+            if v.storage_key:
+                try:
+                    response = storage.client.get_object(storage.bucket, v.storage_key)
+                    video_data = response.read()
+                    response.close()
+                    response.release_conn()
+                    safe_title = _safe_filename(v.title)
+                    zf.writestr(f"videos/{v.id}_{safe_title}.mp4", video_data)
+                except Exception as e:
+                    logger.warning(f"Failed to download video {v.id} from MinIO: {e}")
+                    entry["has_video_file"] = False
+                    entry["download_error"] = str(e)
+
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2, default=str))
+
+    buf.seek(0)
+    safe_query = _safe_filename(task.query)
+    filename = f"task_{task.id}_{safe_query}_export.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

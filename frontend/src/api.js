@@ -84,3 +84,7 @@ export async function createDataset(name, description = '', filters = {}) {
 export async function listDatasets() {
   return request('/api/datasets')
 }
+
+export function downloadTaskExport(taskId) {
+  window.location.href = `${BASE}/api/tasks/${taskId}/export`
+}

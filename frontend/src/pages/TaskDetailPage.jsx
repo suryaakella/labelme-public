@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getTaskVideos } from '../api'
+import { getTaskVideos, downloadTaskExport } from '../api'
 
 export default function TaskDetailPage() {
   const { id } = useParams()
@@ -68,7 +68,20 @@ export default function TaskDetailPage() {
             <h1 className="text-2xl font-bold mb-1">Task #{task.id}</h1>
             <p className="text-gray-300 text-lg">{task.query}</p>
           </div>
-          <StatusBadge status={task.status} />
+          <div className="flex items-center gap-3">
+            {videos.length > 0 && !isActive && (
+              <button
+                onClick={() => downloadTaskExport(task.id)}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1.5 rounded transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download All
+              </button>
+            )}
+            <StatusBadge status={task.status} />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
